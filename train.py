@@ -77,10 +77,10 @@ class BirdDataset(torch.utils.data.Dataset):
         return len(self.examples)
 
 
-class Resnet50(nn.Module):
+class CNNModel(nn.Module):
     def __init__(self):
         super().__init__()
-        resnet = models.resnet50(pretrained=True)
+        resnet = models.inception_v3(pretrained=True)
         num_features = resnet.fc.in_features
         resnet.fc = nn.Linear(num_features, 555)
         self.resnet = resnet
@@ -123,11 +123,13 @@ def get_data(batch_size=32, augmentation=None):
 def compute_accuracy(model, dataloader):
     with torch.no_grad():
         total_correct = 0
+        total = 0
         for sample in tqdm(dataloader):
             pred = model(sample['image'].to(device))
             labels = pred.argmax(dim=1)
             total_correct += (labels == sample['label'].to(device)).sum()
-        return total_correct.item() / len(dataloader)
+            total += labels.shape[0]
+        return total_correct.item() / total
 
 
 def train(modelname='test', epochs=10):
@@ -140,7 +142,7 @@ def train(modelname='test', epochs=10):
                              std=[0.229, 0.224, 0.225])
     ])
     data = get_data(augmentation=normalize)
-    model = Resnet50().to(device)
+    model = CNNModel().to(device)
     optim = torch.optim.Adam(model.parameters(), lr=1e-4)
     loss_fn = nn.CrossEntropyLoss()
     sw = SummaryWriter(log_dir=log_dir)
