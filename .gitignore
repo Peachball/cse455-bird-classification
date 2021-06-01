@@ -2,3 +2,4 @@
 *.zip
 /logs/
 __pycache__/
+*.pt

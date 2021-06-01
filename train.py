@@ -29,7 +29,7 @@ class BirdDataset(torch.utils.data.Dataset):
         self.augmentation = augmentation
         default_bird_dir = DATA_DIR / 'birds'
         resized_dir = DATA_DIR / 'birds_resized'
-        train_ratio = 0.99
+        train_ratio = 0.9
         if dataset_type in ['train', 'validate']:
             with (DATA_DIR / 'birds' / 'labels.csv').open() as f:
                 reader = csv.reader(f)
@@ -130,12 +130,12 @@ def compute_accuracy(model, dataloader):
         return total_correct.item() / len(dataloader)
 
 
-def train():
-    modelname = 'test'
-    log_dir = f'logs/{modelname}'
-    save_epochs = 10
+def train(modelname='test', epochs=10):
+    log_dir = Path(f'logs/{modelname}')
 
+    save_path = Path(f'{modelname}.pt')
     normalize = transforms.Compose([
+        # Statistics are based off ImageNet
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225])
     ])
@@ -146,8 +146,15 @@ def train():
     sw = SummaryWriter(log_dir=log_dir)
     global_step = 0
 
+    if save_path.exists():
+        print('Loading previous model')
+        info = torch.load(save_path)
+        global_step = info['global_step']
+        optim.load_state_dict(info['optim'])
+        model.load_state_dict(info['model'])
+
     model.train()
-    for _ in range(save_epochs):
+    for _ in range(epochs):
         print('Computing validate accuracy...')
         model.eval()
         validate_acc = compute_accuracy(model, data['validate'])
@@ -165,6 +172,15 @@ def train():
             global_step += 1
 
             sw.add_scalar('train/err', err, global_step)
+
+        print('Saving...')
+        info = {
+                'model': model.state_dict(),
+                'optim': optim.state_dict(),
+                'global_step': global_step
+                }
+        torch.save(info, save_path)
+
 
 
 if __name__ == '__main__':
