@@ -1,14 +1,16 @@
 import torch
+from torch import nn
+from torch.utils.tensorboard import SummaryWriter
 from torchvision.io import read_image
-from torchvision import transforms
+from torchvision import transforms, models
 import shutil
 from pathlib import Path
 import csv
 import os
 from tqdm import tqdm
+from constants import *
 
-ZIPPED_DATA_PATH = Path('birds21sP.zip')
-DATA_DIR = Path('data/')
+device = torch.device('cuda')
 
 
 def unzip_zipped_data():
@@ -17,20 +19,29 @@ def unzip_zipped_data():
 
 
 class BirdDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_type='train', augmentation=None):
+    def __init__(self,
+                 dataset_type='train',
+                 augmentation=None,
+                 use_resized=True):
         super().__init__()
         self.dataset_type = dataset_type
         self.examples = []
         self.augmentation = augmentation
+        default_bird_dir = DATA_DIR / 'birds'
+        resized_dir = DATA_DIR / 'birds_resized'
+        train_ratio = 0.99
         if dataset_type in ['train', 'validate']:
             with (DATA_DIR / 'birds' / 'labels.csv').open() as f:
                 reader = csv.reader(f)
                 for i, row in enumerate(reader):
                     if i == 0:
                         continue
-                    fname = f'train/{row[1]}/{row[0]}'
+                    if use_resized:
+                        fname = resized_dir / row[0]
+                    else:
+                        fname = default_bird_dir / f'train/{row[1]}/{row[0]}'
                     self.examples.append((fname, int(row[1])))
-                self.validate_ind = int(len(self.examples) * 0.8)
+                self.validate_ind = int(len(self.examples) * train_ratio)
         elif dataset_type == 'test':
             with (DATA_DIR / 'birds' / 'sample.csv').open() as f:
                 reader = csv.reader(f)
@@ -38,7 +49,10 @@ class BirdDataset(torch.utils.data.Dataset):
                     if i == 0:
                         continue
                     root_fname = os.path.basename(row[0])
-                    fname = f'test/0/{root_fname}'
+                    if use_resized:
+                        fname = resized_dir / row[0]
+                    else:
+                        fname = default_bird_dir / f'test/0/{root_fname}'
                     self.examples.append((fname, int(row[1])))
         else:
             raise ValueError(f'Unknown type of dataset: {dataset_type}')
@@ -47,7 +61,9 @@ class BirdDataset(torch.utils.data.Dataset):
         if self.dataset_type == 'validate':
             key += self.validate_ind
         fname, label = self.examples[key]
-        image = read_image(str(DATA_DIR / 'birds' / fname))
+        image = read_image(str(fname)).float() / 255.0
+        if image.shape[0] == 1:
+            image = image.expand(3, -1, -1)
         aug = transforms.Resize((224, 224))
         if self.augmentation is not None:
             aug = transforms.Compose([self.augmentation, aug])
@@ -61,6 +77,18 @@ class BirdDataset(torch.utils.data.Dataset):
         return len(self.examples)
 
 
+class Resnet50(nn.Module):
+    def __init__(self):
+        super().__init__()
+        resnet = models.resnet50(pretrained=True)
+        num_features = resnet.fc.in_features
+        resnet.fc = nn.Linear(num_features, 555)
+        self.resnet = resnet
+
+    def forward(self, x):
+        return self.resnet(x)
+
+
 def get_data(batch_size=32, augmentation=None):
     if not DATA_DIR.exists():
         unzip_zipped_data()
@@ -71,19 +99,20 @@ def get_data(batch_size=32, augmentation=None):
         # empty train directory, meaning that data has not been extracted yet
         unzip_zipped_data()
 
+    workers = 1
     train_dataset = BirdDataset(dataset_type='train',
                                 augmentation=augmentation)
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
-                                               num_workers=4)
+                                               num_workers=workers)
     validate_dataset = BirdDataset(dataset_type='validate')
     validate_loader = torch.utils.data.DataLoader(validate_dataset,
                                                   batch_size=batch_size,
-                                                  num_workers=4)
+                                                  num_workers=workers)
     test_dataset = BirdDataset(dataset_type='test')
     test_loader = torch.utils.data.DataLoader(test_dataset,
                                               batch_size=batch_size,
-                                              num_workers=4)
+                                              num_workers=workers)
     return {
         'train': train_loader,
         'validate': validate_loader,
@@ -91,12 +120,51 @@ def get_data(batch_size=32, augmentation=None):
     }
 
 
+def compute_accuracy(model, dataloader):
+    with torch.no_grad():
+        total_correct = 0
+        for sample in tqdm(dataloader):
+            pred = model(sample['image'].to(device))
+            labels = pred.argmax(dim=1)
+            total_correct += (labels == sample['label'].to(device)).sum()
+        return total_correct.item() / len(dataloader)
+
+
 def train():
-    data = get_data()
-    total = torch.zeros((3,))
-    for sample in tqdm(data['train']):
-        total += sample['image'].type(torch.float32).mean(dim=[0, 2, 3])
-    sample_mean = total / len(data['train'])
+    modelname = 'test'
+    log_dir = f'logs/{modelname}'
+    save_epochs = 10
+
+    normalize = transforms.Compose([
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ])
+    data = get_data(augmentation=normalize)
+    model = Resnet50().to(device)
+    optim = torch.optim.Adam(model.parameters(), lr=1e-4)
+    loss_fn = nn.CrossEntropyLoss()
+    sw = SummaryWriter(log_dir=log_dir)
+    global_step = 0
+
+    model.train()
+    for _ in range(save_epochs):
+        print('Computing validate accuracy...')
+        model.eval()
+        validate_acc = compute_accuracy(model, data['validate'])
+        sw.add_scalar('validate/acc', validate_acc, global_step)
+
+        print('Training')
+        model.train()
+        for sample in tqdm(data['train']):
+            optim.zero_grad()
+            pred = model(sample['image'].to(device))
+            err = loss_fn(pred, sample['label'].to(device))
+            err.backward()
+
+            optim.step()
+            global_step += 1
+
+            sw.add_scalar('train/err', err, global_step)
 
 
 if __name__ == '__main__':

@@ -1,2 +1,4 @@
 /data/
 *.zip
+/logs/
+__pycache__/
