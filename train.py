@@ -80,7 +80,7 @@ class BirdDataset(torch.utils.data.Dataset):
 class CNNModel(nn.Module):
     def __init__(self):
         super().__init__()
-        resnet = models.inception_v3(pretrained=True)
+        resnet = models.resnet34(pretrained=True)
         num_features = resnet.fc.in_features
         resnet.fc = nn.Linear(num_features, 555)
         self.resnet = resnet
