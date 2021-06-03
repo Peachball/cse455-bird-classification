@@ -15,6 +15,7 @@ from constants import *
 
 device = torch.device('cuda')
 parser = argparse.ArgumentParser(description='Train model')
+parser.add_argument('command', default='train', help='which mode to run in')
 parser.add_argument('--logDir',
                     default='logs/',
                     help='output directory for log files')
@@ -252,5 +253,13 @@ def visualize():
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+
 if __name__ == '__main__':
-    visualize()
+    if args.command == 'train':
+        train()
+    elif args.command == 'predict':
+        predict()
+    elif args.command == 'visualize':
+        visualize()
+    else:
+        raise ValueError(f"Unknown command '{args.command}'")
