@@ -8,6 +8,7 @@ from pathlib import Path
 import csv
 import os
 from tqdm import tqdm
+import argparse
 from constants import *
 
 device = torch.device('cuda')
@@ -22,7 +23,7 @@ class BirdDataset(torch.utils.data.Dataset):
     def __init__(self,
                  dataset_type='train',
                  augmentation=None,
-                 use_resized=True):
+                 use_resized=False):
         super().__init__()
         self.dataset_type = dataset_type
         self.examples = []
@@ -50,7 +51,7 @@ class BirdDataset(torch.utils.data.Dataset):
                         continue
                     root_fname = os.path.basename(row[0])
                     if use_resized:
-                        fname = resized_dir / row[0]
+                        fname = resized_dir / root_fname
                     else:
                         fname = default_bird_dir / f'test/0/{root_fname}'
                     self.examples.append((fname, int(row[1])))
@@ -64,10 +65,15 @@ class BirdDataset(torch.utils.data.Dataset):
         image = read_image(str(fname)).float() / 255.0
         if image.shape[0] == 1:
             image = image.expand(3, -1, -1)
-        aug = transforms.Resize((224, 224))
-        if self.augmentation is not None:
+        aug = transforms.Compose([
+            transforms.Resize((224, 224)),
+            # Statistics are based off ImageNet
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+            ])
+        if self.augmentation is not None and self.dataset_type == 'train':
             aug = transforms.Compose([self.augmentation, aug])
-        return {'image': aug(image), 'label': label}
+        return {'image': aug(image), 'label': label, 'path': str(fname.name)}
 
     def __len__(self):
         if self.dataset_type == 'validate':
@@ -132,16 +138,15 @@ def compute_accuracy(model, dataloader):
         return total_correct.item() / total
 
 
-def train(modelname='test', epochs=10):
+def train(modelname='dataaug', epochs=10):
     log_dir = Path(f'logs/{modelname}')
 
     save_path = Path(f'{modelname}.pt')
-    normalize = transforms.Compose([
-        # Statistics are based off ImageNet
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225])
-    ])
-    data = get_data(augmentation=normalize)
+    data = get_data(augmentation=transforms.Compose([
+        transforms.RandomRotation(45),
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        ]))
     model = CNNModel().to(device)
     optim = torch.optim.Adam(model.parameters(), lr=1e-4)
     loss_fn = nn.CrossEntropyLoss()
@@ -184,6 +189,26 @@ def train(modelname='test', epochs=10):
         torch.save(info, save_path)
 
 
+def predict(modelname, dest_file):
+    if dest_file.exists():
+        raise ValueError('Prediction file already exists!')
+
+    info = torch.load(f'{modelname}.pt')
+    model = CNNModel().to(device)
+    model.load_state_dict(info['model'])
+    data = get_data()
+
+    with dest_file.open('w') as f:
+        f.write('path,class\n')
+        model.eval()
+        for sample in tqdm(data['test']):
+            with torch.no_grad():
+                pred = model(sample['image'].to(device))
+                idx_pred = pred.argmax(dim=1)
+                for i in range(pred.shape[0]):
+                    path = sample['path'][i]
+                    cls = idx_pred[i].item()
+                    f.write(f'test/{path},{cls}\n')
 
 if __name__ == '__main__':
     train()
