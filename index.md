@@ -1,37 +1,21 @@
-## Welcome to GitHub Pages
+# Bird Classification Challenge
 
-You can use the [editor on GitHub](https://github.com/Peachball/cse455-bird-classification/edit/gh-pages/index.md) to maintain and preview the content for your website in Markdown files.
+For the final project, we joined the class bird classification challenge. The
+problem was to categorize various species of birds. Data was provided by the
+competition, and the main technique used was a [Residual
+Network](https://arxiv.org/abs/1512.03385). We started with a network using only
+34 layers, and then later moved our training code to Google Colab to then use a
+network with 152 layers.
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+Initially when training, we found that the model was overfitting to the data, as
+which makes sense as there are only around 50000 images and 555 labels. As a
+result, we used data augmentation, specifically the "RandomResizedCrop", and
+"RandomHorizontalFlip", as these were both common augmentations that do not
+affect the perceived visual categorizations of birds. After using these
+augmentations, we achieved our final accuracy of around 0.69.
 
-### Markdown
+We implemented all of the training code in this repository ourself. We also
+initialized the weights of the networks used from pretrained networks on
+Imagenet.
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
-
-```markdown
-Syntax highlighted code block
-
-# Header 1
-## Header 2
-### Header 3
-
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
-```
-
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/Peachball/cse455-bird-classification/settings/pages). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://docs.github.com/categories/github-pages-basics/) or [contact support](https://support.github.com/contact) and we’ll help you sort it out.
+Our project video is [here]()
