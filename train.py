@@ -248,7 +248,9 @@ def visualize():
     for sample in data['train']:
         npimg = sample['image'][1].numpy()
         transposed = np.transpose(npimg, (1, 2, 0)) * 0.255 + 0.485
+        transposed = np.clip(transposed, 0, 1)
         cv2.imshow('train image', transposed)
+        cv2.imwrite('demo.png', transposed * 255)
         break
     cv2.waitKey(0)
     cv2.destroyAllWindows()
