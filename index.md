@@ -18,4 +18,4 @@ We implemented all of the training code in this repository ourself. We also
 initialized the weights of the networks used from pretrained networks on
 Imagenet.
 
-Our project video is [here]()
+Our project video is [here](https://youtu.be/dLXy_UliSNM)
