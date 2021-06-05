@@ -164,7 +164,7 @@ def compute_accuracy(model, dataloader):
         return total_correct.item() / total
 
 
-def train(epochs=10):
+def train(epochs=20):
     log_dir = Path(f'{args.logDir}/{args.modelname}')
 
     save_path = Path(f'{args.saveDir}/{args.modelname}.pt')
@@ -258,7 +258,7 @@ if __name__ == '__main__':
     if args.command == 'train':
         train()
     elif args.command == 'predict':
-        predict()
+        predict(Path(f'{args.modelname}_pred.csv'))
     elif args.command == 'visualize':
         visualize()
     else:
